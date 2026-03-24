@@ -10,7 +10,7 @@ The system combines:
 - Anomaly detection (Isolation Forest)
 - LLM-based explanations (investigator support)
 
-Live demo: [Add your Streamlit link here]
+Live demo: (https://fraud-detection-dx7or8vbx6cl3y6srk2gnn.streamlit.app/)
 
 ---
 
