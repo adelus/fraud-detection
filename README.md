@@ -13,12 +13,11 @@ The system combines:
 ---
 ## Project Structure
 
-
-streamlit_app.py → UI
-fraud_scoring_pipeline.py → rule-based scoring
-anomaly_detector.py → anomaly detection (Isolation Forest)
-slm_case_enrichment.py → LLM explanation layer
-enriched_claims.jsonl → precomputed demo data
+streamlit_app.py → UI \
+fraud_scoring_pipeline.py → rule-based scoring \ 
+anomaly_detector.py → anomaly detection (Isolation Forest) \
+slm_case_enrichment.py → LLM explanation layer \ 
+enriched_claims.jsonl → precomputed demo data \
 
 ---
 
@@ -47,13 +46,13 @@ Happy to discuss with others working on:
 
 The system follows a hybrid fraud detection approach:
 
-Claims Data  
-→ Feature Engineering  
-→ Rule-Based Scoring  
-→ Anomaly Detection (Isolation Forest)  
-→ Combined Risk Score  
-→ LLM Explanation Layer  
-→ Investigator UI (Streamlit)
+- Ingest Claims Data (CSV files)  
+- Transform Data and Feature Engineering   
+- Apply Rule-Based Scoring  
+- Apply Anomaly Detection (Isolation Forest)  
+- Combine Risk Score  
+- Use LLM to Explain the Results  
+- Display the Results for Investigation
 
 ---
 
