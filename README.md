@@ -1,635 +1,255 @@
-# PHASE 1
-Yes. Here is the logic, end to end.
+# Auto Claims Fraud Detection (POC)
 
-# 1. What the current system is actually doing
+This project demonstrates a hybrid fraud detection system for auto insurance claims.
 
-Your current POC does **not** use a trained fraud model yet.
-Right now it uses:
+The goal is not only to detect suspicious claims, but to make decisions explainable and actionable for investigators.
 
-* **synthetic claim patterns**
-* **derived features**
-* **deterministic rules**
-* **a cumulative rule score**
-* **a risk band**
-* **an LLM explanation layer for flagged claims**
+The system combines:
 
-So the fraud/anomaly detection logic is currently **rule-based scoring**, not statistical anomaly detection.
+- Rule-based scoring (known fraud patterns)
+- Anomaly detection (Isolation Forest)
+- LLM-based explanations (investigator support)
+
+---
+## Project Structure
+
+
+streamlit_app.py → UI
+fraud_scoring_pipeline.py → rule-based scoring
+anomaly_detector.py → anomaly detection (Isolation Forest)
+slm_case_enrichment.py → LLM explanation layer
+enriched_claims.jsonl → precomputed demo data
 
 ---
 
-# 2. The main idea
+## Overview
 
-We are trying to identify claims that look suspicious because they contain one or more of these patterns:
+This branch contains the full version of the system, including real-time LLM integration using a local model (Ollama).
 
-* claim filed very soon after policy start
-* unusually high repair estimate
-* repeated claimant/contact/repair-shop linkage
-* multiple recent prior claims
-* inconsistency between claimant narrative and adjuster note
-* suspicious wording in the adjuster note
-
-Each suspicious pattern adds points.
-More points = more suspicious.
+Unlike the deployed demo, this version performs:
+- live LLM inference
+- real-time claim enrichment
+- full pipeline execution
 
 ---
 
-# 3. Features we derive before scoring
+## About this project
 
-From the raw claim fields, we compute a few useful signals.
+This project was built to explore how  AI techniques can support fraud detection systems in a practical, explainable way.
 
-## A. `days_since_policy_start`
+Happy to discuss with others working on:
+- fraud detection
+- risk systems
+- AI applications in enterprise systems
+---
 
-Calculated as:
+## Architecture
 
-```python
+The system follows a hybrid fraud detection approach:
+
+Claims Data  
+→ Feature Engineering  
+→ Rule-Based Scoring  
+→ Anomaly Detection (Isolation Forest)  
+→ Combined Risk Score  
+→ LLM Explanation Layer  
+→ Investigator UI (Streamlit)
+
+---
+
+## Key Concepts
+
+- **Rules** capture known fraud patterns  
+  (e.g. early claims, repeated entities, inconsistent narratives)
+
+- **Anomaly detection** identifies claims that deviate from normal behavior
+
+- **Hybrid scoring** combines both approaches into a final risk score
+
+- **LLM is used for explanation, not detection**  
+  → generates summaries, inconsistencies, and investigator notes
+
+---
+## Setup environment
+1. Build 
+python -m venv myenv
+source myenv/bin/activate
+pip install -r requirements.txt
+2. Start Ollama
+ollama run llama3.1:8b
+3. Generate data
+python synthetic_data_generator.py
+4. Run scoring pipeline
+python fraud_scoring_pipeline.py
+5. Run LLM enrichment
+python slm_case_enrichment.py
+6. Launch UI
+streamlit run streamlit_app.py
+
+
+## Detection Logic (Detailed)
+
+### 1. What the system is doing
+
+This POC does not rely on a trained fraud model yet.
+
+It uses:
+
+- synthetic claim patterns  
+- derived features  
+- deterministic rules  
+- a cumulative rule score  
+- a risk classification  
+- an LLM explanation layer  
+
+The fraud detection logic is primarily **rule-based scoring**, enhanced with anomaly detection.
+
+---
+
+### 2. Main idea
+
+Claims are flagged as suspicious when they exhibit patterns such as:
+
+- claim filed shortly after policy start  
+- unusually high repair estimate  
+- repeated claimant / phone / repair shop  
+- multiple recent prior claims  
+- inconsistency between narrative and adjuster note  
+- suspicious wording in adjuster notes  
+
+Each signal contributes to a cumulative score.
+
+---
+
+### 3. Derived features
+
+#### days_since_policy_start
 incident_date - policy_start_date
-```
 
-Interpretation:
+- low values are suspicious
 
-* very small value = suspicious
-* example: claim 5 days after policy start
+#### reporting_delay_days
 
-Why it matters:
-
-* early claims are a classic fraud indicator
-
----
-
-## B. `reporting_delay_days`
-
-Calculated as:
-
-```python
 claim_report_date - incident_date
-```
 
-Interpretation:
+- long delays may indicate risk
 
-* long delay may be suspicious
-* not always fraud, but worth scoring lightly
+#### repair_cost_band
+Categorized into:
+- low / medium / high / very_high
 
----
-
-## C. `repair_cost_band`
-
-We bucket the repair cost into:
-
-* low
-* medium
-* high
-* very_high
-
-This is mostly for readability and UI support, though the actual rules use the numeric amount.
+#### adjuster_suspicious_keyword_hits
+Detects keywords like:
+- inconsistent
+- does not match
+- unusually high
+- limited damage
 
 ---
 
-## D. `adjuster_suspicious_keyword_hits`
+### 4. Rule-based scoring
 
-We scan the adjuster note for phrases like:
+Each triggered rule adds points.
 
-* inconsistent
-* does not match
-* unusually high
-* elevated
-* linked
-* flagged
-* limited visible damage
-* shortly after policy
+Examples:
 
-Interpretation:
+| Rule | Condition | Score |
+|------|----------|------|
+| Early claim | < 15 days | +3 |
+| High repair cost | > 8000 | +2 |
+| Very high cost | > 12000 | +1 |
+| Multiple prior claims | ≥ 2 | +2 |
+| Same phone reuse | ≥ 2 | +2 |
+| Repair shop reuse | ≥ 5 | +2 |
+| Suspicious adjuster note | keywords | +2 |
+| Narrative inconsistency | mismatch | +3 |
 
-* if the adjuster note already contains suspicious language, we increase the score
-
----
-
-# 4. Rules used to calculate the fraud score
-
-Each rule adds points to a `rule_score`.
-
-## Rule 1 — Early policy claim
-
-Condition:
-
-```python
-days_since_policy_start < 15
-```
-
-Score added:
-
-```python
-+3
-```
-
-Reason:
-A claim very soon after policy start is a strong suspicious signal.
-
-Rule hit recorded as:
-
-* `"claim filed shortly after policy start"`
+Final rule score = sum of triggered rules
 
 ---
 
-## Rule 2 — Delayed reporting
+### 5. Anomaly detection
 
-Condition:
+Isolation Forest is used to detect unusual claims.
 
-```python
-reporting_delay_days > 7
-```
+It analyzes features such as:
+- repair cost
+- claim timing
+- prior claims
+- linked entities
 
-Score added:
-
-```python
-+1
-```
-
-Reason:
-Delayed reporting can be suspicious, but by itself it is weak.
-
-Rule hit:
-
-* `"claim reported with unusual delay"`
+Output:
+- anomaly score (normalized)
+- higher = more unusual
 
 ---
 
-## Rule 3 — High repair estimate
+### 6. Hybrid scoring
 
-Condition:
+Final score combines:
 
-```python
-estimated_repair_cost > 8000
-```
 
-Score added:
+final_score =
+0.60 * rule_score_normalized +
+0.40 * anomaly_score_normalized
 
-```python
-+2
-```
 
-Reason:
-A high repair cost can indicate inflation or exaggerated damage.
-
-Rule hit:
-
-* `"repair estimate above normal threshold"`
+Why:
+- rules = explainable
+- anomaly detection = captures unknown patterns
 
 ---
 
-## Rule 4 — Very high repair estimate
+### 7. Risk classification
 
-Condition:
-
-```python
-estimated_repair_cost > 12000
-```
-
-Score added:
-
-```python
-+1
-```
-
-Reason:
-Extremely high estimates deserve extra scrutiny.
-
-Rule hit:
-
-* `"repair estimate exceptionally high"`
-
-This is additive with Rule 3.
+| Score | Risk |
+|------|------|
+| < 30 | Low |
+| 30–60 | Medium |
+| > 60 | High |
 
 ---
 
-## Rule 5 — Multiple prior claims
+### 8. Decision logic
 
-Condition:
-
-```python
-prior_claims_12m >= 2
-```
-
-Score added:
-
-```python
-+2
-```
-
-Reason:
-Frequent claims in a short period can indicate abnormal behavior.
-
-Rule hit:
-
-* `"multiple prior claims in the last 12 months"`
+| Risk | Action |
+|------|--------|
+| Low | Approve / fast track |
+| Medium | LLM-assisted review |
+| High | Priority investigation |
 
 ---
 
-## Rule 6 — Same phone linked to multiple claims
+### 9. Role of the LLM
 
-Condition:
+The LLM does NOT detect fraud.
 
-```python
-linked_claims_same_phone >= 2
-```
+It is used to:
 
-Score added:
+- summarize claims  
+- highlight inconsistencies  
+- extract evidence  
+- generate investigator notes  
 
-```python
-+2
-```
-
-Reason:
-Repeated contact details across claims can indicate organized or recycled claims.
-
-Rule hit:
-
-* `"same phone number linked to multiple claims"`
+This improves explainability and analyst efficiency
 
 ---
 
-## Rule 7 — Same repair shop linked to multiple claims
+## Limitations
 
-Condition:
-
-```python
-linked_claims_same_repair_shop >= 5
-```
-
-Score added:
-
-```python
-+2
-```
-
-Reason:
-Repeated concentration around the same repair shop may indicate suspicious clustering.
-
-Rule hit:
-
-* `"repair shop linked to multiple claims"`
+- Rule thresholds are heuristic (not learned)
+- Anomaly detection identifies unusual behavior, not confirmed fraud
+- Scores are not calibrated probabilities
+- Some signals may be correlated (double counting)
+- No feedback loop from investigators yet
 
 ---
 
-## Rule 8 — Suspicious wording in adjuster note
+## Future Improvements
 
-Condition:
+- Add supervised ML model (logistic regression / XGBoost)
+- Introduce RAG with fraud policies and case history
+- Implement feedback loop from investigators
+- Add graph-based fraud detection (entity linking)
+- Improve score calibration and threshold tuning
 
-```python
-adjuster_suspicious_keyword_hits >= 1
-```
-
-Score added:
-
-```python
-+2
-```
-
-Reason:
-If the adjuster already uses suspicious language, that is a meaningful signal.
-
-Rule hit:
-
-* `"adjuster note contains suspicious language"`
-
----
-
-## Rule 9 — Explicit inconsistency in narrative vs damage
-
-Condition:
-If adjuster note contains phrases like:
-
-* `"inconsistent"`
-* `"does not match"`
-
-Score added:
-
-```python
-+3
-```
-
-Reason:
-This is one of the strongest fraud indicators in the current POC.
-
-Rule hit:
-
-* `"narrative inconsistency detected"`
-
----
-
-## Rule 10 — Theft claim with very short narrative
-
-Condition:
-
-```python
-claim_type == "theft" and len(claimant_narrative) < 60
-```
-
-Score added:
-
-```python
-+1
-```
-
-Reason:
-A vague theft narrative can be a weak suspicious signal.
-
-Rule hit:
-
-* `"brief theft narrative with limited detail"`
-
----
-
-## Rule 11 — Single-area damage with unusually high cost
-
-Condition:
-
-```python
-damage_area in {"front", "rear", "left side", "right side"} and estimated_repair_cost > 10000
-```
-
-Score added:
-
-```python
-+1
-```
-
-Reason:
-Limited damage scope combined with very high cost may suggest estimate inflation.
-
-Rule hit:
-
-* `"single-area damage with unusually high repair cost"`
-
----
-
-# 5. How the total score is calculated
-
-The system simply adds all triggered rule weights.
-
-Example:
-
-* early policy claim: `+3`
-* high repair estimate: `+2`
-* same phone repeated: `+2`
-* suspicious adjuster wording: `+2`
-
-Total:
-
-```text
-rule_score = 9
-```
-
-So the score is a **weighted sum of suspicious indicators**.
-
----
-
-# 6. How risk levels are assigned
-
-After calculating `rule_score`, we map it to a risk band.
-
-## Current mapping
-
-### Low risk
-
-```python
-score <= 2
-```
-
-### Medium risk
-
-```python
-3 <= score <= 5
-```
-
-### High risk
-
-```python
-score >= 6
-```
-
-This is intentionally simple for the POC.
-
----
-
-# 7. How decisions are assigned
-
-From the risk band, the pipeline assigns a review action.
-
-## Low risk
-
-```text
-approve_or_fast_track
-```
-
-Meaning:
-
-* no major suspicion
-* can move faster through the workflow
-
-## Medium risk
-
-```text
-review_with_slm
-```
-
-Meaning:
-
-* suspicious enough for AI-assisted review
-* send to LLM for summary and analysis
-
-## High risk
-
-```text
-priority_investigation
-```
-
-Meaning:
-
-* significant suspicious indicators
-* prioritize investigator review
-
----
-
-# 8. Where “anomaly detection” fits today
-
-Strictly speaking, your current version is **not yet true anomaly detection**.
-
-It is:
-
-* **rule-based fraud scoring**
-* with some heuristic abnormality signals
-
-True anomaly detection would involve a model such as:
-
-* Isolation Forest
-* One-Class SVM
-* Autoencoder
-* clustering-based outlier detection
-
-That would identify claims that are statistically unusual compared with the rest of the population.
-
-We have not added that yet.
-
----
-
-# 9. What the LLM does vs what the score does
-
-This distinction is very important.
-
-## The score decides:
-
-* how suspicious the claim is
-* whether it should be escalated
-
-## The LLM does not decide fraud
-
-The LLM:
-
-* summarizes the claim
-* identifies inconsistencies
-* extracts evidence
-* generates an investigator note
-* suggests review priority in natural language
-
-So:
-
-* **rules/score = primary detection**
-* **LLM = explanation and triage support**
-
-That is the right architecture.
-
----
-
-# 10. Example of the scoring logic in practice
-
-Take this claim:
-
-* `days_since_policy_start = 6`
-* `estimated_repair_cost = 11800`
-* `prior_claims_12m = 3`
-* `linked_claims_same_phone = 4`
-* `linked_claims_same_repair_shop = 7`
-* adjuster note says estimate is elevated
-
-Triggered rules:
-
-* early policy claim → `+3`
-* high repair estimate → `+2`
-* multiple prior claims → `+2`
-* same phone repeated → `+2`
-* same repair shop repeated → `+2`
-* suspicious adjuster wording → `+2`
-* single-area damage with high cost → `+1`
-
-Total:
-
-```text
-rule_score = 14
-```
-
-Risk band:
-
-```text
-high
-```
-
-Decision:
-
-```text
-priority_investigation
-```
-
-Then the LLM explains *why*.
-
----
-
-# 11. Why this works for a POC
-
-This approach is good for a POC because it is:
-
-* easy to understand
-* easy to debug
-* easy to explain to business users
-* easy to tune
-* easy to connect to synthetic data
-* compatible with later ML upgrades
-
-It also gives you traceability:
-for every suspicious claim, you can say exactly which rules fired.
-
-That is very valuable.
-
----
-
-# 12. Limitations of the current scoring logic
-
-This is important to be honest about.
-
-## It is heuristic
-
-The thresholds are hand-crafted, not learned from real outcomes.
-
-## It is additive
-
-It assumes the total suspicion is just the sum of rule weights.
-
-## It is not calibrated
-
-A score of 8 does not yet mean “80% fraud probability.”
-
-## It may double count related signals
-
-For example:
-
-* high repair cost
-* very high repair cost
-* suspicious note about estimate
-
-These can reinforce each other, but they are partially correlated.
-
-## It does not yet learn from outcomes
-
-No feedback loop yet:
-
-* confirmed fraud
-* false positives
-* investigator decisions
-
----
-
-# 13. How we would improve this later
-
-The natural evolution is:
-
-## Phase 1 — current state
-
-Weighted rules
-
-## Phase 2
-
-Add anomaly detection:
-
-* Isolation Forest on numeric features
-
-## Phase 3
-
-Add supervised model:
-
-* logistic regression
-* XGBoost
-
-## Phase 4
-
-Calibrate score and threshold using real claims outcomes
-
-## Phase 5
-
-Use graph/link analytics for repeated entities and fraud rings
-
----
-
-# 14. Clean summary in one sentence
-
-Your current POC identifies suspicious auto claims by **deriving a few fraud-relevant features, applying weighted business rules, summing the triggered rule weights into a risk score, mapping that score to low/medium/high risk, and then using the LLM to explain and summarize flagged claims**.
-
-If you want, the next thing I can do is turn this into a **one-page architecture/design note** you can reuse in your project documentation.
