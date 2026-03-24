@@ -16,15 +16,15 @@ Live demo: (https://fraud-detection-dx7or8vbx6cl3y6srk2gnn.streamlit.app/)
 
 ## Architecture
 
-The system follows a hybrid fraud detection approach:
+The system follows the steps:
 
-Claims Data  
-→ Feature Engineering  
-→ Rule-Based Scoring  
-→ Anomaly Detection (Isolation Forest)  
-→ Combined Risk Score  
-→ LLM Explanation Layer  
-→ Investigator UI (Streamlit)
+- Ingest Claims Data (CSV files)  
+- Transform Data and Feature Engineering   
+- Apply Rule-Based Scoring  
+- Apply Anomaly Detection (Isolation Forest)  
+- Combine Risk Score  
+- Use LLM to Explain the Results  
+- Display the Results for Investigation
 
 ---
 
@@ -49,8 +49,7 @@ Claims Data
 This POC does not rely on a trained fraud model yet.
 
 It uses:
-
-- synthetic claim patterns  
+  
 - derived features  
 - deterministic rules  
 - a cumulative rule score  
@@ -67,7 +66,7 @@ Claims are flagged as suspicious when they exhibit patterns such as:
 
 - claim filed shortly after policy start  
 - unusually high repair estimate  
-- repeated claimant / phone / repair shop  
+- repeated claimant/phone / repair shop  
 - multiple recent prior claims  
 - inconsistency between narrative and adjuster note  
 - suspicious wording in adjuster notes  
@@ -212,7 +211,6 @@ This improves explainability and analyst efficiency
 
 ## Project Structure
 
-
 streamlit_app.py → UI (deployed demo)
 fraud_scoring_pipeline.py → rule-based scoring
 anomaly_detector.py → anomaly detection (Isolation Forest)
@@ -229,18 +227,6 @@ In a production setup:
 - the UI would call a remote model service
 - scoring and inference would run in backend services
 
----
-
-## Key Insight
-
-Fraud detection systems should not rely on a single technique.
-
-The most effective approach combines:
-
-- deterministic rules  
-- statistical anomaly detection  
-- human-in-the-loop decision making  
-- AI-assisted explanations  
 
 ---
 
